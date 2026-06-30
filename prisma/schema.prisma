@@ -1,0 +1,205 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  qa
+  developer
+}
+
+enum ProjectStatus {
+  active
+  inactive
+  completed
+}
+
+enum TestCaseStatus {
+  OPEN
+  TO_FIX
+  FOR_QA
+  PASS
+  FAILED
+  CLOSED
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum IssueType {
+  BUG
+  FEATURE
+  ENHANCEMENT
+  DOCUMENTATION
+}
+
+enum ProjectMemberRole {
+  author
+  editor
+  viewer
+}
+
+model User {
+  id        Int       @id @default(autoincrement())
+  name      String
+  email     String    @unique
+  password  String
+  role      UserRole
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  projects Project[]
+  projectMembers ProjectMember[]
+  sentInvitations ProjectInvitation[] @relation("InvitationSender")
+  receivedInvitations ProjectInvitation[] @relation("InvitationReceiver")
+  testCasesCreated TestCase[] @relation("TestCaseCreatedBy")
+  testCasesAssigned TestCase[] @relation("TestCaseAssignedTo")
+  testCasesVerified TestCase[] @relation("TestCaseVerifiedBy")
+  activityLogs ActivityLog[]
+  passwordResets PasswordReset[]
+
+  @@map("users")
+}
+
+model Project {
+  id          Int         @id @default(autoincrement())
+  name        String
+  description String?
+  status      ProjectStatus @default(active)
+  isArchived  Boolean     @default(false) @map("is_archived")
+  createdById Int         @map("created_by")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  createdBy  User        @relation(fields: [createdById], references: [id])
+  testCases  TestCase[]
+  members    ProjectMember[]
+  invitations ProjectInvitation[]
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        Int                @id @default(autoincrement())
+  projectId Int                @map("project_id")
+  userId    Int                @map("user_id")
+  role      ProjectMemberRole  @default(editor)
+  createdAt DateTime           @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("project_members")
+}
+
+model ProjectInvitation {
+  id        Int                @id @default(autoincrement())
+  projectId Int                @map("project_id")
+  invitedById Int              @map("invited_by")
+  invitedToId Int              @map("invited_to")
+  status    String             @default("pending") // pending, accepted, declined
+  role      ProjectMemberRole  @default(editor)
+  createdAt DateTime           @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  invitedBy User    @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: Cascade)
+  invitedTo User    @relation("InvitationReceiver", fields: [invitedToId], references: [id], onDelete: Cascade)
+
+  @@map("project_invitations")
+}
+
+model TestCase {
+  id                  Int             @id @default(autoincrement())
+  projectId           Int             @map("project_id")
+  caseNumber          String          @map("case_number")
+  version             String?
+  title               String
+  expectedResult      String?         @map("expected_result") @db.Text
+  actualResult        String?         @map("actual_result") @db.Text
+  testData            String?         @map("test_data") @db.Text
+  stepsToReproduce    String?         @map("steps_to_reproduce") @db.Text
+  severity            String          @default("MEDIUM")
+  priority            String          @default("MEDIUM")
+  issueType           String          @default("BUG") @map("issue_type")
+  status              String          @default("OPEN")
+  assignedToId        Int?            @map("assigned_to")
+  rootCause           String?         @map("root_cause") @db.Text
+  actionPlan          String?         @map("action_plan") @db.Text
+  developerSolution   String?         @map("developer_solution") @db.Text
+  developerPushDate   DateTime?       @map("developer_push_date")
+  verifiedById        Int?            @map("verified_by")
+  verificationDate    DateTime?       @map("verification_date")
+  comments            String?         @db.Text
+  logsDate            DateTime        @default(now()) @map("logs_date")
+  createdById         Int             @map("created_by")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  project         Project         @relation(fields: [projectId], references: [id])
+  assignedTo      User?           @relation("TestCaseAssignedTo", fields: [assignedToId], references: [id])
+  createdBy       User            @relation("TestCaseCreatedBy", fields: [createdById], references: [id])
+  verifiedBy      User?           @relation("TestCaseVerifiedBy", fields: [verifiedById], references: [id])
+  attachments     Attachment[]
+  activityLogs    ActivityLog[]
+
+  @@unique([projectId, caseNumber])
+  @@map("test_cases")
+}
+
+model Attachment {
+  id          Int       @id @default(autoincrement())
+  testCaseId  Int       @map("test_case_id")
+  url         String
+  publicId    String    @map("public_id")
+  fileName    String    @map("file_name")
+  fileType    String    @map("file_type")
+  size        Int?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  testCase TestCase @relation(fields: [testCaseId], references: [id])
+
+  @@map("attachments")
+}
+
+model ActivityLog {
+  id          Int             @id @default(autoincrement())
+  testCaseId  Int             @map("test_case_id")
+  userId      Int             @map("user_id")
+  action      String
+  oldValue    String?         @map("old_value") @db.Text
+  newValue    String?         @map("new_value") @db.Text
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  testCase TestCase @relation(fields: [testCaseId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@map("activity_logs")
+}
+
+model PasswordReset {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_resets")
+}
